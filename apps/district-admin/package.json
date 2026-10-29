@@ -1,0 +1,58 @@
+{
+  "name": "examflow-district-admin",
+  "productName": "ExamFlow District Admin",
+  "version": "1.0.0",
+  "description": "ExamFlow District Administrator desktop application",
+  "main": "main.js",
+  "author": "ExamFlow",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.examflow.districtadmin",
+    "productName": "ExamFlow District Admin",
+    "copyright": "Copyright © ExamFlow",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "ExamFlow-District-Admin-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ExamFlow District Admin",
+      "artifactName": "ExamFlow-District-Admin-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ExamFlow-District-Admin-Portable-${version}.${ext}"
+    },
+    "publish": null
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

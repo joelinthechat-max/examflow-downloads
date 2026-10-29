@@ -1,0 +1,58 @@
+{
+  "name": "examflow-school-admin",
+  "productName": "ExamFlow School Admin",
+  "version": "1.0.0",
+  "description": "ExamFlow School Administrator desktop application",
+  "main": "main.js",
+  "author": "ExamFlow",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.examflow.schooladmin",
+    "productName": "ExamFlow School Admin",
+    "copyright": "Copyright © ExamFlow",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "ExamFlow-School-Admin-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ExamFlow School Admin",
+      "artifactName": "ExamFlow-School-Admin-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ExamFlow-School-Admin-Portable-${version}.${ext}"
+    },
+    "publish": null
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}
