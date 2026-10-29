@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ExamFlow</string>
+    <string name="start_url">https://examflow-backend-79ws.onrender.com/admin</string>
+    <string name="offline_message">No internet connection.\nExamFlow requires an active network to reach the servers.</string>
+    <string name="retry">Retry Connection</string>
+</resources>
