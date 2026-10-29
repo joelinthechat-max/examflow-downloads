@@ -1,0 +1,152 @@
+name: Build and Publish Windows Apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 1.0.0). Leave empty to use package.json versions.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: school-admin
+            setup_name: ExamFlow-School-Admin-Setup
+            portable_name: ExamFlow-School-Admin-Portable
+          - role: district-admin
+            setup_name: ExamFlow-District-Admin-Setup
+            portable_name: ExamFlow-District-Admin-Portable
+          - role: teacher
+            setup_name: ExamFlow-Teacher-Setup
+            portable_name: ExamFlow-Teacher-Portable
+          - role: student
+            setup_name: ExamFlow-Student-Setup
+            portable_name: ExamFlow-Student-Portable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/${{ matrix.role }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/${{ matrix.role }}
+        run: npm install
+
+      - name: Build Windows executables
+        working-directory: apps/${{ matrix.role }}
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist contents
+        working-directory: apps/${{ matrix.role }}
+        run: |
+          Get-ChildItem -Path dist -Recurse | Select-Object FullName, Length
+
+      - name: Verify expected artifacts exist
+        working-directory: apps/${{ matrix.role }}
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path dist -Filter "*Setup*.exe" -ErrorAction SilentlyContinue
+          $portable = Get-ChildItem -Path dist -Filter "*Portable*.exe" -ErrorAction SilentlyContinue
+          if (-not $setup) { throw "Setup installer not found in dist/" }
+          if (-not $portable) { throw "Portable executable not found in dist/" }
+          Write-Host "Found setup: $($setup.Name)"
+          Write-Host "Found portable: $($portable.Name)"
+
+      - name: Upload build artifacts (for workflow inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.role }}-windows
+          path: |
+            apps/${{ matrix.role }}/dist/*Setup*.exe
+            apps/${{ matrix.role }}/dist/*Portable*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all role artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded files
+        run: find artifacts -type f -name "*.exe" | sort
+
+      - name: Determine tag / version
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            TAG="v${{ github.event.inputs.version }}"
+          else
+            TAG="v1.0.0"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
+      - name: Create or update GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ExamFlow Desktop Apps ${{ steps.ver.outputs.tag }}
+          body: |
+            ## ExamFlow Windows Desktop Applications ${{ steps.ver.outputs.tag }}
+
+            Secure Electron wrappers for the existing ExamFlow web portals.
+
+            ### Downloads
+
+            | Role | Installer | Portable |
+            |------|-----------|----------|
+            | School Admin | ExamFlow-School-Admin-Setup-*.exe | ExamFlow-School-Admin-Portable-*.exe |
+            | District Admin | ExamFlow-District-Admin-Setup-*.exe | ExamFlow-District-Admin-Portable-*.exe |
+            | Teacher | ExamFlow-Teacher-Setup-*.exe | ExamFlow-Teacher-Portable-*.exe |
+            | Student | ExamFlow-Student-Setup-*.exe | ExamFlow-Student-Portable-*.exe |
+
+            ### Requirements
+            - Windows 10 / 11 (64-bit)
+            - Internet connection required
+
+            ### Security note
+            These builds are **not code-signed**. Windows may show a SmartScreen warning. Choose “More info” → “Run anyway” if you obtained the files from this official repository.
+
+            ### Web portals (no install required)
+            - School Admin: https://examflow-backend-79ws.onrender.com/admin
+            - District Admin: https://examflow-backend-79ws.onrender.com/district/
+            - Teacher: https://examflow-backend-79ws.onrender.com/teacher/
+            - Student: https://examflow-backend-79ws.onrender.com/student/
+          files: |
+            artifacts/**/*.exe
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
