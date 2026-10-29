@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+*.exe
+*.blockmap
+out/
+release/
+.cache/
+*.tmp
+.env
+.env.*
+*.local
