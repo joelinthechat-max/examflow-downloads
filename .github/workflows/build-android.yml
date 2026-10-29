@@ -1,0 +1,169 @@
+name: Build Android APKs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version name (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: school-admin
+            app_name: "ExamFlow School Admin"
+            app_id: com.examflow.schooladmin
+            start_url: "https://examflow-backend-79ws.onrender.com/admin"
+            apk_name: ExamFlow-School-Admin
+          - role: district-admin
+            app_name: "ExamFlow District Admin"
+            app_id: com.examflow.districtadmin
+            start_url: "https://examflow-backend-79ws.onrender.com/district/"
+            apk_name: ExamFlow-District-Admin
+          - role: teacher
+            app_name: "ExamFlow Teacher"
+            app_id: com.examflow.teacher
+            start_url: "https://examflow-backend-79ws.onrender.com/teacher/"
+            apk_name: ExamFlow-Teacher
+          - role: student
+            app_name: "ExamFlow Student"
+            app_id: com.examflow.student
+            start_url: "https://examflow-backend-79ws.onrender.com/student/"
+            apk_name: ExamFlow-Student
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare project for role
+        run: |
+          set -e
+          ROLE="${{ matrix.role }}"
+          WORK=android-build-$ROLE
+          mkdir -p "$WORK"
+          cp -r android/template/* "$WORK/"
+          sed -i "s/applicationId \"com.examflow.app\"/applicationId \"${{ matrix.app_id }}\"/" "$WORK/app/build.gradle"
+          cat > "$WORK/app/src/main/res/values/strings.xml" << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">${{ matrix.app_name }}</string>
+              <string name="start_url">${{ matrix.start_url }}</string>
+              <string name="offline_message">No internet connection. ExamFlow requires an active network.</string>
+              <string name="retry">Retry Connection</string>
+          </resources>
+          EOF
+          VER="${{ github.event.inputs.version }}"
+          if [ -z "$VER" ]; then VER="1.0.0"; fi
+          sed -i "s/versionName \"1.0.0\"/versionName \"$VER\"/" "$WORK/app/build.gradle"
+          echo "Prepared $WORK for ${{ matrix.app_name }}"
+
+      - name: Generate Gradle wrapper
+        working-directory: android-build-${{ matrix.role }}
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
+          chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: android-build-${{ matrix.role }}
+        run: |
+          ./gradlew assembleDebug --stacktrace
+          ls -la app/build/outputs/apk/debug/
+
+      - name: Rename APK
+        run: |
+          VER="${{ github.event.inputs.version }}"
+          if [ -z "$VER" ]; then VER="1.0.0"; fi
+          SRC="android-build-${{ matrix.role }}/app/build/outputs/apk/debug/app-debug.apk"
+          DEST="${{ matrix.apk_name }}-${VER}.apk"
+          cp "$SRC" "$DEST"
+          ls -la "$DEST"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.apk_name }}-apk
+          path: ${{ matrix.apk_name }}-*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build-apk
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all APKs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List APKs
+        run: find artifacts -name "*.apk" | sort
+
+      - name: Determine tag
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            VER="${{ github.event.inputs.version }}"
+            if [ -z "$VER" ]; then VER="1.0.0"; fi
+            TAG="v$VER"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Upload APKs to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ExamFlow Desktop & Android Apps ${{ steps.ver.outputs.tag }}
+          files: artifacts/**/*.apk
+          fail_on_unmatched_files: false
+          body: |
+            ## ExamFlow Apps ${{ steps.ver.outputs.tag }}
+
+            ### Windows (Electron) — see .exe assets
+            ### Android (WebView APKs)
+            | Role | APK |
+            |------|-----|
+            | School Admin | ExamFlow-School-Admin-*.apk |
+            | District Admin | ExamFlow-District-Admin-*.apk |
+            | Teacher | ExamFlow-Teacher-*.apk |
+            | Student | ExamFlow-Student-*.apk |
+
+            **Android install notes**
+            - Enable install from unknown sources.
+            - Debug-signed for direct distribution (not Play Store signed).
+            - Internet required. Login stays on existing web portals.
+
+            ### Web portals
+            - School Admin: https://examflow-backend-79ws.onrender.com/admin
+            - District Admin: https://examflow-backend-79ws.onrender.com/district/
+            - Teacher: https://examflow-backend-79ws.onrender.com/teacher/
+            - Student: https://examflow-backend-79ws.onrender.com/student/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
