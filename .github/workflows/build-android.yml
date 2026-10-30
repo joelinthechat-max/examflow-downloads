@@ -55,50 +55,67 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # Install only valid SDK packages; the legacy "tools" package was removed.
-          packages: platform-tools,platforms;android-34,build-tools;34.0.0
+          packages: 'platform-tools'
+
+      - name: Install Android platform and build-tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Prepare project for role
         run: |
-          set -e
+          set -euo pipefail
           ROLE="${{ matrix.role }}"
-          WORK=android-build-$ROLE
+          WORK="android-build-${ROLE}"
           mkdir -p "$WORK"
-          cp -r android/template/* "$WORK/"
-          sed -i "s/applicationId \"com.examflow.app\"/applicationId \"${{ matrix.app_id }}\"/" "$WORK/app/build.gradle"
-          cat > "$WORK/app/src/main/res/values/strings.xml" << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">${{ matrix.app_name }}</string>
-              <string name="start_url">${{ matrix.start_url }}</string>
-              <string name="offline_message">No internet connection. ExamFlow requires an active network.</string>
-              <string name="retry">Retry Connection</string>
-          </resources>
-          EOF
+          cp -a android/template/. "$WORK/"
+
+          sed -i 's/applicationId "com.examflow.app"/applicationId "${{ matrix.app_id }}"/' "$WORK/app/build.gradle"
+
           VER="${{ github.event.inputs.version }}"
           if [ -z "$VER" ]; then VER="1.0.0"; fi
-          sed -i "s/versionName \"1.0.0\"/versionName \"$VER\"/" "$WORK/app/build.gradle"
+          sed -i "s/versionName \"1.0.0\"/versionName \"${VER}\"/" "$WORK/app/build.gradle"
+
+          cat > "$WORK/app/src/main/res/values/strings.xml" << 'STREOF'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">APP_NAME_PLACEHOLDER</string>
+    <string name="start_url">START_URL_PLACEHOLDER</string>
+    <string name="offline_message">No internet connection. ExamFlow requires an active network.</string>
+    <string name="retry">Retry Connection</string>
+</resources>
+STREOF
+          sed -i "s|APP_NAME_PLACEHOLDER|${{ matrix.app_name }}|g" "$WORK/app/src/main/res/values/strings.xml"
+          sed -i "s|START_URL_PLACEHOLDER|${{ matrix.start_url }}|g" "$WORK/app/src/main/res/values/strings.xml"
+
           echo "Prepared $WORK for ${{ matrix.app_name }}"
+          cat "$WORK/app/src/main/res/values/strings.xml"
+          ls -la "$WORK/app/src/main/java/com/examflow/app/"
 
       - name: Generate Gradle wrapper
         working-directory: android-build-${{ matrix.role }}
         run: |
+          set -euo pipefail
           curl -sL https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/gradle.zip
+          rm -rf /tmp/gradle-8.5
           unzip -q /tmp/gradle.zip -d /tmp
           /tmp/gradle-8.5/bin/gradle wrapper --gradle-version 8.5
           chmod +x gradlew
+          ./gradlew --version
 
       - name: Build debug APK
         working-directory: android-build-${{ matrix.role }}
         run: |
-          ./gradlew assembleDebug --stacktrace
-          ls -la app/build/outputs/apk/debug/
+          set -euo pipefail
+          ./gradlew assembleDebug --stacktrace --no-daemon
+          find app/build/outputs -name "*.apk" -ls
 
       - name: Rename APK
         run: |
+          set -euo pipefail
           VER="${{ github.event.inputs.version }}"
           if [ -z "$VER" ]; then VER="1.0.0"; fi
-          SRC="android-build-${{ matrix.role }}/app/build/outputs/apk/debug/app-debug.apk"
+          SRC=$(find "android-build-${{ matrix.role }}/app/build/outputs" -name "*.apk" | head -1)
           DEST="${{ matrix.apk_name }}-${VER}.apk"
           cp "$SRC" "$DEST"
           ls -la "$DEST"
